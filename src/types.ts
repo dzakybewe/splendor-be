@@ -87,7 +87,27 @@ export interface GameState {
   /** Player index the final round must return to before the game ends. */
   finalRoundStartIndex: number | null;
   pendingDiscard: PendingDiscard | null;
+  /** Chronological feed of what happened, oldest first. The client renders the text. */
+  log: LogEntry[];
 }
+
+// ---------------------------------------------------------------------------
+// Activity log
+// ---------------------------------------------------------------------------
+
+/**
+ * One event for the client to render as a line in the game log. Structured rather than
+ * a pre-built message so the frontend controls wording and localisation.
+ */
+export type LogEntry = { id: string; timestamp: number } & (
+  | { type: 'take_three_different'; playerId: string; colors: Color[] }
+  | { type: 'take_two_same'; playerId: string; color: Color; count: 2 }
+  | { type: 'reserve_card'; playerId: string; card: Card; tookGold: boolean; fromDeck: boolean }
+  | { type: 'buy_card'; playerId: string; card: Card; fromReserved: boolean }
+  | { type: 'discard_tokens'; playerId: string; tokens: Partial<TokenPool> }
+  | { type: 'noble_visit'; playerId: string; noble: Noble }
+  | { type: 'game_over'; winnerId: string | null }
+);
 
 // ---------------------------------------------------------------------------
 // Actions

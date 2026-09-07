@@ -297,3 +297,145 @@ describe('determineWinner', () => {
     expect(determineWinner(game)).toBe('p1');
   });
 });
+
+describe('the action log', () => {
+  it('starts empty on a fresh game', () => {
+    const game = newGame(2);
+    expect(game.log).toEqual([]);
+  });
+
+  it('records a take_three_different action', () => {
+    const game = newGame(2);
+    const result = applyAction(game, 'p1', {
+      type: 'take_three_different',
+      colors: ['emerald', 'ruby'],
+    });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    expect(result.gameState.log).toHaveLength(1);
+    expect(result.gameState.log[0]).toMatchObject({
+      type: 'take_three_different',
+      playerId: 'p1',
+      colors: ['emerald', 'ruby'],
+    });
+  });
+
+  it('records a take_two_same action', () => {
+    const game = newGame(2);
+    const result = applyAction(game, 'p1', { type: 'take_two_same', color: 'ruby' });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    expect(result.gameState.log).toHaveLength(1);
+    expect(result.gameState.log[0]).toMatchObject({
+      type: 'take_two_same',
+      playerId: 'p1',
+      color: 'ruby',
+      count: 2,
+    });
+  });
+
+  it('records a reserve_card action, including whether gold was taken', () => {
+    const game = newGame(2);
+    const target = game.tableCards.tier1[0];
+    if (!target) throw new Error('expected a face-up tier1 card');
+
+    const result = applyAction(game, 'p1', { type: 'reserve_card', cardId: target.id });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    expect(result.gameState.log).toHaveLength(1);
+    expect(result.gameState.log[0]).toMatchObject({
+      type: 'reserve_card',
+      playerId: 'p1',
+      card: { id: target.id },
+      tookGold: true,
+      fromDeck: false,
+    });
+  });
+
+  it('records a buy_card action', () => {
+    const game = newGame(2);
+    const target = card({ id: 'target', bonus: 'ruby', cost: cost({ onyx: 1 }) });
+    game.tableCards.tier1[0] = target;
+    playerAt(game, 0).tokens = tokens({ onyx: 1 });
+
+    const result = applyAction(game, 'p1', { type: 'buy_card', cardId: 'target' });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    expect(result.gameState.log).toHaveLength(1);
+    expect(result.gameState.log[0]).toMatchObject({
+      type: 'buy_card',
+      playerId: 'p1',
+      card: { id: 'target' },
+      fromReserved: false,
+    });
+  });
+
+  it('records a discard_tokens action', () => {
+    const game = newGame(3);
+    game.bank = tokens({ emerald: 5, sapphire: 5, ruby: 5, diamond: 5, onyx: 5, gold: 5 });
+    playerAt(game, 0).tokens = tokens({ emerald: 4, sapphire: 4, ruby: 2 });
+
+    const takeResult = applyAction(game, 'p1', { type: 'take_three_different', colors: ['ruby', 'diamond'] });
+    expect(takeResult.success).toBe(true);
+    if (!takeResult.success) return;
+    expect(takeResult.gameState.pendingDiscard).not.toBeNull();
+
+    const excess = takeResult.gameState.pendingDiscard?.excess ?? 0;
+    const discardResult = applyAction(takeResult.gameState, 'p1', {
+      type: 'discard_tokens',
+      tokensToDiscard: { ruby: excess },
+    });
+    expect(discardResult.success).toBe(true);
+    if (!discardResult.success) return;
+
+    expect(discardResult.gameState.log).toHaveLength(2);
+    expect(discardResult.gameState.log[1]).toMatchObject({
+      type: 'discard_tokens',
+      playerId: 'p1',
+      tokens: { ruby: excess },
+    });
+  });
+
+  it('records a noble_visit alongside the action that triggered it', () => {
+    const game = newGame(2);
+    game.nobles = [noble('n1', { ruby: 3 })];
+    const target = card({ id: 'target', bonus: 'ruby', cost: cost({ onyx: 1 }) });
+    game.tableCards.tier1[0] = target;
+    playerAt(game, 0).cardsOwned = bonusCards('ruby', 2);
+    playerAt(game, 0).tokens = tokens({ onyx: 1 });
+
+    const result = applyAction(game, 'p1', { type: 'buy_card', cardId: 'target' });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    expect(result.gameState.log.map((entry) => entry.type)).toEqual(['buy_card', 'noble_visit']);
+    expect(result.gameState.log[1]).toMatchObject({ type: 'noble_visit', playerId: 'p1', noble: { id: 'n1' } });
+  });
+
+  it('records game_over when the final round completes', () => {
+    const game = newGame(2);
+    game.finalRoundTriggered = true;
+    game.finalRoundStartIndex = 0;
+    game.currentPlayerIndex = 1;
+    playerAt(game, 1).points = WINNING_POINTS;
+
+    const result = applyAction(game, 'p2', { type: 'take_two_same', color: 'ruby' });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    expect(result.gameState.status).toBe('finished');
+    expect(result.gameState.log.at(-1)).toMatchObject({ type: 'game_over', winnerId: 'p2' });
+  });
+
+  it('does not append a log entry when the action is rejected', () => {
+    const game = newGame(2);
+    // p2 acting out of turn — p1 goes first.
+    const rejected = applyAction(game, 'p2', { type: 'take_two_same', color: 'ruby' });
+    expect(rejected.success).toBe(false);
+    expect(game.log).toEqual([]);
+  });
+});

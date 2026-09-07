@@ -1,4 +1,5 @@
-import type { ActionResult, GameState, Player, PlayerAction } from '../types.js';
+import { randomUUID } from 'node:crypto';
+import type { ActionResult, GameState, LogEntry, Player, PlayerAction } from '../types.js';
 import {
   buyCard,
   discardExcessTokens,
@@ -13,6 +14,65 @@ import { bonusesOf, clone, currentPlayer, findPlayer, totalTokens } from './util
 
 function fail(error: string): ActionResult {
   return { success: false, error };
+}
+
+/**
+ * Turn a just-applied action into its log entry. Reads card details back out of
+ * `gameState` (the state *after* the action ran) rather than re-deriving them, since
+ * the action already resolved which card was reserved or bought.
+ */
+function buildLogEntry(
+  gameStateBefore: GameState,
+  gameStateAfter: GameState,
+  playerId: string,
+  action: PlayerAction,
+): LogEntry | null {
+  const base = { id: randomUUID(), timestamp: Date.now() };
+  const player = findPlayer(gameStateAfter, playerId);
+  if (!player) return null;
+
+  switch (action.type) {
+    case 'take_three_different':
+      return { ...base, type: 'take_three_different', playerId, colors: [...action.colors] };
+    case 'take_two_same':
+      return { ...base, type: 'take_two_same', playerId, color: action.color, count: 2 };
+    case 'reserve_card': {
+      const card = player.reservedCards[player.reservedCards.length - 1];
+      if (!card) return null;
+      const playerBefore = findPlayer(gameStateBefore, playerId);
+      const goldBefore = playerBefore?.tokens.gold ?? 0;
+      return {
+        ...base,
+        type: 'reserve_card',
+        playerId,
+        card,
+        tookGold: player.tokens.gold > goldBefore,
+        fromDeck: 'fromDeck' in action && action.fromDeck === true,
+      };
+    }
+    case 'buy_card': {
+      const card = player.cardsOwned[player.cardsOwned.length - 1];
+      if (!card) return null;
+      return {
+        ...base,
+        type: 'buy_card',
+        playerId,
+        card,
+        fromReserved: action.fromReserved === true,
+      };
+    }
+    case 'discard_tokens':
+      return { ...base, type: 'discard_tokens', playerId, tokens: action.tokensToDiscard };
+    default:
+      return null;
+  }
+}
+
+function appendLog(gameState: GameState, entry: LogEntry | null): GameState {
+  if (!entry) return gameState;
+  const next = clone(gameState);
+  next.log.push(entry);
+  return next;
 }
 
 /**
@@ -168,7 +228,27 @@ export function applyAction(
   const result = dispatch(gameState, action);
   if (!result.success) return result;
 
-  let next = checkNobleVisit(result.gameState, playerId);
+  let next = appendLog(
+    result.gameState,
+    buildLogEntry(gameState, result.gameState, playerId, action),
+  );
+
+  const nobleCountBefore = next.nobles.length;
+  next = checkNobleVisit(next, playerId);
+  if (next.nobles.length < nobleCountBefore) {
+    const visited = gameState.nobles.find(
+      (noble) => !next.nobles.some((remaining) => remaining.id === noble.id),
+    );
+    if (visited) {
+      next = appendLog(next, {
+        id: randomUUID(),
+        timestamp: Date.now(),
+        type: 'noble_visit',
+        playerId,
+        noble: visited,
+      });
+    }
+  }
 
   const actor = findPlayer(next, playerId);
   const held = actor ? totalTokens(actor.tokens) : 0;
@@ -181,7 +261,16 @@ export function applyAction(
 
   next = checkWinCondition(next);
   next = advanceTurn(next);
+  const wasPlaying = next.status === 'playing';
   next = finishIfRoundComplete(next);
+  if (wasPlaying && next.status === 'finished') {
+    next = appendLog(next, {
+      id: randomUUID(),
+      timestamp: Date.now(),
+      type: 'game_over',
+      winnerId: next.winnerId,
+    });
+  }
 
   return { success: true, gameState: next };
 }

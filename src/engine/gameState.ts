@@ -101,5 +101,6 @@ export function createGame(seeds: PlayerSeed[], options: CreateGameOptions = {})
     finalRoundTriggered: false,
     finalRoundStartIndex: null,
     pendingDiscard: null,
+    log: [],
   };
 }
