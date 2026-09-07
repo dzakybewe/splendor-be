@@ -37,6 +37,9 @@ assertion.
 Types for every payload below live in [`src/types.ts`](src/types.ts) — import that file
 from the frontend rather than redeclaring the shapes.
 
+For the full `GameState` shape, every action's payload and preconditions, every error
+code, and the action log, see [`docs/API.md`](docs/API.md).
+
 ### Client → server
 
 | Event | Payload |
