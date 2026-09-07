@@ -40,16 +40,22 @@ function fail(error: string): ActionResult {
   return { success: false, error };
 }
 
-/** Take one token each of three different colours. Gold cannot be taken this way. */
+/**
+ * Take one token each of up to three different colours. Gold cannot be taken this way.
+ *
+ * Deviates from the printed rule (which requires exactly three unless the bank is
+ * scarce): the player may choose to take 1, 2, or 3 distinct colours regardless of
+ * what else remains in the bank.
+ */
 export function takeThreeDifferentTokens(
   gameState: GameState,
   payload: TakeThreeDifferentPayload,
 ): ActionResult {
   const colors = payload?.colors;
-  if (!Array.isArray(colors) || colors.length !== TAKE_THREE_COUNT) {
+  if (!Array.isArray(colors) || colors.length < 1 || colors.length > TAKE_THREE_COUNT) {
     return fail(ERRORS.NEED_THREE_DISTINCT_COLORS);
   }
-  if (new Set(colors).size !== TAKE_THREE_COUNT) {
+  if (new Set(colors).size !== colors.length) {
     return fail(ERRORS.NEED_THREE_DISTINCT_COLORS);
   }
   // isColor rejects gold, which is only ever obtained by reserving.

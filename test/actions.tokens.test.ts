@@ -39,16 +39,31 @@ describe('takeThreeDifferentTokens', () => {
     expect(result).toEqual({ success: false, error: ERRORS.NEED_THREE_DISTINCT_COLORS });
   });
 
-  it('rejects anything other than exactly three colours', () => {
+  it('allows taking fewer than three distinct colours', () => {
     const game = newGame(2);
-    expect(takeThreeDifferentTokens(game, { colors: ['emerald', 'ruby'] }).error).toBe(
-      ERRORS.NEED_THREE_DISTINCT_COLORS,
-    );
+    const result = takeThreeDifferentTokens(game, { colors: ['emerald', 'ruby'] });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    const player = playerAt(result.gameState, 0);
+    expect(player.tokens.emerald).toBe(1);
+    expect(player.tokens.ruby).toBe(1);
+    expect(player.tokens.onyx).toBe(0);
+  });
+
+  it('rejects more than three colours', () => {
+    const game = newGame(2);
     expect(
       takeThreeDifferentTokens(game, {
         colors: ['emerald', 'ruby', 'onyx', 'diamond'],
       }).error,
     ).toBe(ERRORS.NEED_THREE_DISTINCT_COLORS);
+  });
+
+  it('rejects an empty colour list', () => {
+    const game = newGame(2);
+    expect(takeThreeDifferentTokens(game, { colors: [] }).error).toBe(
+      ERRORS.NEED_THREE_DISTINCT_COLORS,
+    );
   });
 
   it('rejects gold and unknown colours', () => {
